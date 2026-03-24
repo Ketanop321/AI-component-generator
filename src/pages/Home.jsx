@@ -24,6 +24,7 @@ const Home = () => {
   const [outputScreen, setOutputScreen] = useState(false);
   const [tab, setTab] = useState(1);
   const [framework, setFramework] = useState("");
+  const [generatedFramework, setGeneratedFramework] = useState("");
   const [prompt, setPrompt] = useState("");
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
@@ -208,6 +209,7 @@ const Home = () => {
       
       // Save code to state
       setCode(generatedCode);
+      setGeneratedFramework(framework);
       setOutputScreen(preferences.autoOpenPreview); // Editor show
 
       // Create history entry
@@ -296,6 +298,7 @@ ${cleaned}
   };
 
   const getExportFileName = () => {
+    const activeFramework = generatedFramework || framework;
     const nameMap = {
       "html-css": "component-html-css.html",
       "html-tailwind": "component-tailwind.html",
@@ -303,7 +306,7 @@ ${cleaned}
       "html-css-js": "component-html-css-js.html",
       "html-tailwind-bootstrap": "component-tailwind-bootstrap.html",
     };
-    return nameMap[framework] || "component.html";
+    return nameMap[activeFramework] || "component.html";
   };
 
   const exportCodeToFile = () => {
@@ -348,9 +351,10 @@ ${cleaned}
 
   const getPreviewCode = () => {
     let previewDoc = ensureHtmlDocument(code || "");
+    const activeFramework = generatedFramework || framework;
 
-    const needsTailwind = framework === "html-tailwind" || framework === "html-tailwind-bootstrap";
-    const needsBootstrap = framework === "html-bootstrap" || framework === "html-tailwind-bootstrap";
+    const needsTailwind = activeFramework === "html-tailwind" || activeFramework === "html-tailwind-bootstrap";
+    const needsBootstrap = activeFramework === "html-bootstrap" || activeFramework === "html-tailwind-bootstrap";
 
     if (needsTailwind && !/cdn\.tailwindcss\.com/i.test(previewDoc)) {
       previewDoc = addToHead(
@@ -375,7 +379,7 @@ ${cleaned}
       );
     }
 
-    if (framework === "html-css" || framework === "html-css-js") {
+    if (activeFramework === "html-css" || activeFramework === "html-css-js") {
       const hasCustomStyles = /<style[\s>]|style\s*=|class\s*=/i.test(previewDoc);
       if (!hasCustomStyles) {
         previewDoc = addToHead(
@@ -500,6 +504,7 @@ body {
                     key={h.id}
                     onClick={() => {
                       setFramework(h.framework);
+                      setGeneratedFramework(h.framework);
                       setPrompt(h.prompt);
                       setCode(h.code);
                       setOutputScreen(true);
@@ -628,7 +633,7 @@ body {
                 ) : (
                   <div className="w-full h-full app-panel overflow-auto">
                     <iframe
-                      key={`preview-${framework}-${previewNonce}`}
+                      key={`preview-${generatedFramework || framework}-${previewNonce}`}
                       title="preview"
                       className="w-full h-full border-0"
                       srcDoc={getPreviewCode()}

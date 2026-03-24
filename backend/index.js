@@ -251,34 +251,46 @@ app.post("/generate", authenticateToken, async (req, res) => {
 
   try {
     const frameworkGuideMap = {
-      "html-css": "Return semantic HTML with a complete <style> block. Do not rely on external CSS frameworks.",
-      "html-tailwind": "Use Tailwind utility classes only. Do not include external CSS files.",
-      "html-bootstrap": "Use Bootstrap 5 classes and structure. Avoid custom heavy CSS unless needed for polish.",
-      "html-css-js": "Return semantic HTML, complete CSS in <style>, and minimal JS in <script> only if interaction is required.",
-      "html-tailwind-bootstrap": "Use Tailwind + Bootstrap-compatible markup while keeping styles conflict-safe and clean.",
+      "html-css": "Return semantic HTML with a complete <style> block using CSS variables for colors, spacing, radius, and shadows. Do not rely on external CSS frameworks.",
+      "html-tailwind": "Use Tailwind utility classes only and include nuanced spacing, typography, depth, and state styling.",
+      "html-bootstrap": "Use Bootstrap 5 classes/structure and elevate visuals with tasteful utility overrides when needed.",
+      "html-css-js": "Return semantic HTML, complete CSS in <style>, and minimal JS in <script> only for meaningful interactions.",
+      "html-tailwind-bootstrap": "Use Tailwind + Bootstrap-compatible markup while keeping style conflicts minimal and hierarchy crisp.",
     };
 
     const frameworkGuide = frameworkGuideMap[framework] || "Return production-ready frontend code for the requested framework.";
 
     const fullPrompt = `
-You are an expert frontend developer.
-Generate a modern, premium-looking, responsive UI component.
+You are a senior frontend engineer and expert UI/UX designer.
+Generate a premium, visually striking, production-grade UI component.
 
 Framework: ${framework}
 Component Description: ${prompt}
 
 Requirements:
-- Strong visual hierarchy with clean spacing and alignment.
-- Modern color grading with accessible contrast.
-- Polished states (hover, focus, active) for interactive elements.
-- Balanced radius, shadows, and typography for a production feel.
-- Mobile-first responsiveness that also looks refined on desktop.
-- Keep code concise, readable, and reusable.
+- Create an intentional visual direction, not a generic template.
+- Use a cohesive color system with depth: background, surface, accent, muted text, border, and interactive states.
+- Ensure excellent visual hierarchy with consistent spacing rhythm and alignment.
+- Use strong typography contrast (heading/body/supporting text) and readable line-height.
+- Add polished micro-interactions for buttons/cards/inputs (hover, focus-visible, active, disabled).
+- Include at least one tasteful premium detail (subtle gradient, glow, layered shadow, glass effect, or texture) without hurting clarity.
+- Ensure accessibility: contrast, visible focus state, and semantic structure.
+- Make it responsive for mobile and desktop breakpoints.
+- Keep code clean and maintainable.
+
+Design quality bar:
+- This should look like a dribbble-quality modern SaaS/product UI, not basic boilerplate.
+- Avoid flat, dull, default-looking layouts.
+- Avoid clashing colors; use balanced modern color grading.
+- Prefer rounded-xl style geometry, soft shadows, and generous whitespace where appropriate.
 
 Framework rules:
 ${frameworkGuide}
 
-Return only the code, no explanation, no markdown fences.
+Output rules:
+- Return only code (no explanation, no markdown fences).
+- If HTML/CSS is requested, include complete runnable markup and styles.
+- If JS is needed for interactions, keep it minimal and inline.
     `;
 
     let text = "";
