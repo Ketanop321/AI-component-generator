@@ -24,11 +24,12 @@ const Home = () => {
   const [outputScreen, setOutputScreen] = useState(false);
   const [tab, setTab] = useState(1);
   const [framework, setFramework] = useState("");
+  const [generatedFramework, setGeneratedFramework] = useState("");
   const [prompt, setPrompt] = useState("");
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [previewNonce, setPreviewNonce] = useState(0);
-  const { getAuthToken } = useContext(AuthContext);
+  const { getAuthToken, user } = useContext(AuthContext);
   const { isDark } = useContext(ThemeContext);
   const [history, setHistory] = useState([]);
   const [preferences, setPreferences] = useState({
@@ -37,18 +38,67 @@ const Home = () => {
     showTips: true,
   });
 
+  const dedupeAndSortHistory = useCallback((entries = []) => {
+    const uniqueMap = new Map();
+
+    entries.forEach((entry) => {
+      const signature = `${entry?.framework || ""}::${entry?.prompt || ""}::${entry?.code || ""}`;
+      if (!uniqueMap.has(signature)) {
+        uniqueMap.set(signature, {
+          ...entry,
+          id: entry?.id || Date.now() + Math.floor(Math.random() * 1000),
+          created_at: entry?.created_at || new Date().toISOString(),
+        });
+      }
+    });
+
+    return Array.from(uniqueMap.values())
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      .slice(0, 50);
+  }, []);
+
   // Utility functions for history management
-  const getLocalStorageKey = useCallback(() => {
+  const getLocalStorageKeys = useCallback(() => {
+    const keys = [];
+
+    if (user?.id) {
+      keys.push(`codeHistory_user_${user.id}`);
+    }
+
+    if (user?.email) {
+      keys.push(`codeHistory_email_${user.email.toLowerCase()}`);
+    }
+
     const token = getAuthToken();
-    return `codeHistory_${token}`;
-  }, [getAuthToken]);
+    if (token) {
+      // Backward compatibility for existing token-keyed histories.
+      keys.push(`codeHistory_${token}`);
+    }
+
+    keys.push("codeHistory_global");
+
+    return [...new Set(keys)];
+  }, [getAuthToken, user]);
 
   const saveHistoryToLocalStorage = (newEntry) => {
     try {
-      const key = getLocalStorageKey();
-      const existing = JSON.parse(localStorage.getItem(key) || "[]");
-      const updated = [newEntry, ...existing].slice(0, 50); // Keep last 50
-      localStorage.setItem(key, JSON.stringify(updated));
+      const keys = getLocalStorageKeys();
+      const existing = keys.flatMap((key) => {
+        try {
+          return JSON.parse(localStorage.getItem(key) || "[]");
+        } catch {
+          return [];
+        }
+      });
+
+      const updated = dedupeAndSortHistory([newEntry, ...existing]);
+
+      // Save to the first key (user-specific) and keep global as fallback.
+      localStorage.setItem(keys[0], JSON.stringify(updated));
+      if (keys.includes("codeHistory_global")) {
+        localStorage.setItem("codeHistory_global", JSON.stringify(updated));
+      }
+
       return true;
     } catch (err) {
       console.warn("Failed to save to localStorage:", err);
@@ -58,13 +108,21 @@ const Home = () => {
 
   const getHistoryFromLocalStorage = useCallback(() => {
     try {
-      const key = getLocalStorageKey();
-      return JSON.parse(localStorage.getItem(key) || "[]");
+      const keys = getLocalStorageKeys();
+      const merged = keys.flatMap((key) => {
+        try {
+          return JSON.parse(localStorage.getItem(key) || "[]");
+        } catch {
+          return [];
+        }
+      });
+
+      return dedupeAndSortHistory(merged);
     } catch (err) {
       console.warn("Failed to read from localStorage:", err);
       return [];
     }
-  }, [getLocalStorageKey]);
+  }, [dedupeAndSortHistory, getLocalStorageKeys]);
 
   // Load history from backend (Supabase) or localStorage (fallback)
   const loadHistory = useCallback(async () => {
@@ -83,8 +141,18 @@ const Home = () => {
       if (res.ok) {
         const data = await res.json();
         const backendHistory = Array.isArray(data?.history) ? data.history : [];
-        setHistory(backendHistory);
-        console.log("✅ History loaded from backend:", backendHistory.length);
+
+        const localHistory = getHistoryFromLocalStorage();
+        const mergedHistory = dedupeAndSortHistory([...backendHistory, ...localHistory]);
+
+        if (backendHistory.length > 0) {
+          setHistory(mergedHistory);
+          console.log("✅ History loaded from backend/local merge:", mergedHistory.length);
+        } else {
+          // Backend returned empty history (or Supabase fallback note). Keep local history visible.
+          setHistory(localHistory);
+          console.log("ℹ️ Backend history empty, using localStorage:", localHistory.length);
+        }
       } else {
         // Fallback to localStorage
         console.warn("⚠️ Backend returned status", res.status, "- Using localStorage");
@@ -141,6 +209,7 @@ const Home = () => {
       
       // Save code to state
       setCode(generatedCode);
+      setGeneratedFramework(framework);
       setOutputScreen(preferences.autoOpenPreview); // Editor show
 
       // Create history entry
@@ -163,7 +232,10 @@ const Home = () => {
 
         if (histRes.ok) {
           const histData = await histRes.json();
-          setHistory(Array.isArray(histData?.history) ? histData.history : []);
+          const backendHistory = Array.isArray(histData?.history) ? histData.history : [];
+          const localHistory = getHistoryFromLocalStorage();
+          const mergedHistory = dedupeAndSortHistory([...backendHistory, ...localHistory]);
+          setHistory(mergedHistory.length > 0 ? mergedHistory : localHistory);
           console.log("✅ History synced from backend");
         } else {
           // Use localStorage as fallback
@@ -226,6 +298,7 @@ ${cleaned}
   };
 
   const getExportFileName = () => {
+    const activeFramework = generatedFramework || framework;
     const nameMap = {
       "html-css": "component-html-css.html",
       "html-tailwind": "component-tailwind.html",
@@ -233,7 +306,7 @@ ${cleaned}
       "html-css-js": "component-html-css-js.html",
       "html-tailwind-bootstrap": "component-tailwind-bootstrap.html",
     };
-    return nameMap[framework] || "component.html";
+    return nameMap[activeFramework] || "component.html";
   };
 
   const exportCodeToFile = () => {
@@ -278,9 +351,10 @@ ${cleaned}
 
   const getPreviewCode = () => {
     let previewDoc = ensureHtmlDocument(code || "");
+    const activeFramework = generatedFramework || framework;
 
-    const needsTailwind = framework === "html-tailwind" || framework === "html-tailwind-bootstrap";
-    const needsBootstrap = framework === "html-bootstrap" || framework === "html-tailwind-bootstrap";
+    const needsTailwind = activeFramework === "html-tailwind" || activeFramework === "html-tailwind-bootstrap";
+    const needsBootstrap = activeFramework === "html-bootstrap" || activeFramework === "html-tailwind-bootstrap";
 
     if (needsTailwind && !/cdn\.tailwindcss\.com/i.test(previewDoc)) {
       previewDoc = addToHead(
@@ -305,7 +379,7 @@ ${cleaned}
       );
     }
 
-    if (framework === "html-css" || framework === "html-css-js") {
+    if (activeFramework === "html-css" || activeFramework === "html-css-js") {
       const hasCustomStyles = /<style[\s>]|style\s*=|class\s*=/i.test(previewDoc);
       if (!hasCustomStyles) {
         previewDoc = addToHead(
@@ -430,6 +504,7 @@ body {
                     key={h.id}
                     onClick={() => {
                       setFramework(h.framework);
+                      setGeneratedFramework(h.framework);
                       setPrompt(h.prompt);
                       setCode(h.code);
                       setOutputScreen(true);
@@ -558,7 +633,7 @@ body {
                 ) : (
                   <div className="w-full h-full app-panel overflow-auto">
                     <iframe
-                      key={`preview-${framework}-${previewNonce}`}
+                      key={`preview-${generatedFramework || framework}-${previewNonce}`}
                       title="preview"
                       className="w-full h-full border-0"
                       srcDoc={getPreviewCode()}
